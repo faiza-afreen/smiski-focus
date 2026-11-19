@@ -3,7 +3,7 @@
 
 A desktop productivity companion that combines distraction blocking,
 Pomodoro timers, and interactive study analytics to help students
-understand and improve their study habits.
+understand their study habits.
 
 ## ✨ Features
 
@@ -25,12 +25,30 @@ The dashboard provides:
 - Total recorded focus time
 - Session completion rates
 - Average session duration
+- Completed and unfinished session statistics
 - Daily focus trends
 - Instagram blocking trends
 - Hourly distraction patterns
 - Weekly distraction heatmaps
+- Seven-day moving average of focus time
+- Focus time analysis by session starting hour
+- Distraction and session completion comparison
 - Automated descriptive insights
-- Date range filtering
+- Custom date range filtering
+- CSV data exports
+
+### Demo Mode
+
+Demo Mode allows users to explore the analytics dashboard
+without collecting personal study data.
+
+- Generates 30 days of synthetic study records
+- Uses a fixed random seed for reproducibility
+- Supports existing charts, filters, and CSV exports
+- Keeps synthetic data separate from personal records
+- Does not insert synthetic records into SQLite
+
+Enable Demo Mode through the dashboard sidebar.
 
 ## 🛠️ Tech Stack
 
@@ -46,64 +64,81 @@ The dashboard provides:
 | Plotly | Interactive data visualization |
 | Streamlit | Analytics dashboard |
 | Pillow | Desktop icon generation |
+| Git/GitHub | Version control |
 
 ## 🏗️ System Architecture
 
-Chrome Extension → Flask API → SQLite Database
-
-SQLite Database → Desktop Companion
-
-SQLite Database → Pandas → Streamlit Dashboard
+```mermaid
+flowchart TD
+    A[Chrome Extension] --> B[Flask REST API]
+    B --> C[(SQLite Database)]
+    D[Desktop Companion] -->|Study Sessions| C
+    C -->|Distraction Events| D
+    C --> E[Pandas Data Processing]
+    F[Synthetic Demo Data] --> E
+    E --> G[Streamlit Analytics Dashboard]
+    G --> H[CSV Reports]
+```
 
 The Chrome extension detects Instagram visits and sends
-blocking events to a local Flask API. These events are stored
-in SQLite and retrieved by the desktop companion and analytics
-dashboard.
+blocking events to a local Flask API.
+
+The API stores these events in SQLite. The desktop companion
+retrieves distraction counts and records focus sessions.
+
+Pandas processes the collected data, while Streamlit and
+Plotly provide interactive visualizations and descriptive
+statistics.
 
 ## 📁 Project Structure
 
-- smiski.py — Desktop companion and focus timer
-- server.py — Flask REST API
-- database.py — SQLite database operations
-- dashboard.py — Interactive analytics dashboard
-- launcher.pyw — Background application launcher
-- create_icon.py — Windows icon generator
-- requirements.txt — Python dependencies
+```text
+smiski-focus/
+├── .streamlit/
+│   └── config.toml
+├── chrome-extension/
+│   ├── background.js
+│   ├── content.js
+│   ├── manifest.json
+│   ├── popup.html
+│   └── popup.js
+├── smiski.py
+├── server.py
+├── database.py
+├── dashboard.py
+├── launcher.pyw
+├── create_icon.py
+├── install.bat
+├── start.bat
+├── requirements.txt
+├── .gitignore
+└── README.md
+```
 
 ## 🚀 Installation
 
-### Install the Chrome Extension
-
-1. Open Google Chrome.
-2. Navigate to chrome://extensions/.
-3. Enable Developer Mode.
-4. Click Load unpacked.
-5. Select the chrome-extension folder.
-6. Enable focus mode through the extension popup.
-
-The extension requires user-provided image assets named
-work.png, sleep.png, push.png, and peek.png inside the
-chrome-extension folder.
-
-Start the desktop application to enable distraction
-logging and real-time analytics.
-
-
 ### Prerequisites
 
-- Python 3.11
 - Windows
+- Python 3.11
 - Google Chrome
+- Git (optional)
 
-### Install dependencies
+### 1. Obtain the project
 
-    python -m pip install -r requirements.txt
+Clone the repository or download it as a ZIP file.
 
-### Initialize the database
+### 2. Install dependencies
 
-    python database.py
+Open a terminal inside the project folder and run:
 
-### Image assets
+```powershell
+py -3.11 -m pip install -r requirements.txt
+```
+
+Alternatively, run `install.bat`.
+
+### 3. Prepare image assets
 
 Provide your own permitted PNG images named:
 
@@ -112,34 +147,82 @@ Provide your own permitted PNG images named:
 - push.png
 - peek.png
 
+Place copies of these images in both the main project folder
+and the `chrome-extension` folder.
+
 Image assets are not distributed with this repository.
 
-### Launch the application
+### 4. Initialize the database
 
-    python launcher.pyw
+```powershell
+py -3.11 database.py
+```
 
-### Open the analytics dashboard
+### 5. Launch the application
+
+```powershell
+py -3.11 launcher.pyw
+```
+
+Alternatively, double-click `start.bat`.
+
+The launcher starts the local Flask server, analytics
+dashboard, and desktop companion.
+
+### 6. Install the Chrome extension
+
+1. Open Google Chrome.
+2. Navigate to chrome://extensions/.
+3. Enable Developer Mode.
+4. Click Load unpacked.
+5. Select the chrome-extension folder.
+6. Enable focus mode through the extension popup.
+
+The desktop application should be running to enable
+distraction logging and real-time analytics.
+
+### 7. Open the analytics dashboard
 
 Visit http://127.0.0.1:8501 or select
 Open Analytics Dashboard from the desktop companion menu.
 
+Enable Demo Mode to explore the dashboard using
+synthetic study records.
+
 ## 🔒 Privacy
 
-Study records and distraction history are stored locally.
-Personal databases, configuration files, and logs are excluded
-from version control.
+- Study records and distraction history are stored locally.
+- Application settings are stored locally using JSON.
+- Personal databases, settings, and logs are excluded
+  from version control.
+- Demo Mode does not modify personal study records.
+- The Flask API runs locally on the user's computer.
 
 ## 📚 Learning Outcomes
 
 This project explores:
 
-- Database design and SQL queries
+- Relational database design and SQL queries
 - REST API integration
 - Data cleaning and transformation
 - Feature engineering
 - Exploratory data analysis
+- Descriptive statistics
+- Time-series analysis and moving averages
+- Synthetic data generation
 - Interactive data visualization
 - Desktop application development
+- Browser extension development
+- Version control using Git and GitHub
+
+## ⚠️ Current Limitations
+
+- Currently designed for Windows and Google Chrome.
+- Website blocking currently supports Instagram.
+- Distraction logging requires the local server to be running.
+- User-provided image assets are required.
+- Recorded focus time does not measure actual productivity.
+- Statistical comparisons do not establish causation.
 
 ## 🔮 Future Improvements
 
@@ -159,11 +242,8 @@ programming, debugging, and documentation.
 This is an unofficial, non-commercial student project.
 It is not affiliated with the Smiski brand.
 
+All third-party artwork belongs to its respective owners.
+Users must provide image assets they have permission to use.
+
 Focus time measures recorded timer usage rather than
 verified productivity.
-
-## Author
-
-Faiza Afreen
-
-Data Science Student | The University of Texas at Dallas
