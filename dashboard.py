@@ -1,14 +1,20 @@
- 
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import sqlite3
+import random
+import time
+
 from pathlib import Path
 from datetime import datetime, timedelta
 from database import init_db
 
 
-# Page settings
+# ==========================================
+# PAGE SETTINGS
+# ==========================================
+
 st.set_page_config(
     page_title="Smiski Focus Analytics",
     page_icon="🌱",
@@ -25,7 +31,10 @@ DARK_GREEN = "#47663D"
 LIGHT_GREEN = "#CDE1B9"
 
 
-# Custom dashboard design
+# ==========================================
+# CUSTOM DESIGN
+# ==========================================
+
 st.markdown("""
 <style>
 
@@ -49,6 +58,10 @@ st.markdown("""
     color: #47663D;
 }
 
+[data-testid="stMetricLabel"] {
+    color: #34482B !important;
+}
+
 h1, h2, h3 {
     color: #34482B !important;
 }
@@ -64,22 +77,12 @@ h1, h2, h3 {
 """, unsafe_allow_html=True)
 
 
-# Retrieve data from SQLite
-def load_data():
+# ==========================================
+# DATA CLEANING AND FEATURE ENGINEERING
+# ==========================================
 
-    with sqlite3.connect(DB_FILE, timeout=10) as conn:
+def prepare_data(distractions, sessions):
 
-        distractions = pd.read_sql_query(
-            "SELECT * FROM distractions",
-            conn
-        )
-
-        sessions = pd.read_sql_query(
-            "SELECT * FROM study_sessions",
-            conn
-        )
-
-    # Convert timestamps
     distractions["timestamp"] = pd.to_datetime(
         distractions["timestamp"],
         errors="coerce"
@@ -98,11 +101,11 @@ def load_data():
     # Remove invalid records
     distractions = distractions.dropna(
         subset=["timestamp"]
-    )
+    ).copy()
 
     sessions = sessions.dropna(
         subset=["start_time", "end_time"]
-    )
+    ).copy()
 
     # Create additional analysis columns
     distractions["date"] = (
@@ -121,6 +124,10 @@ def load_data():
         sessions["start_time"].dt.date
     )
 
+    sessions["hour"] = (
+        sessions["start_time"].dt.hour
+    )
+
     sessions["hours"] = (
         sessions["duration_minutes"] / 60
     )
@@ -133,10 +140,149 @@ def load_data():
     return distractions, sessions
 
 
-distractions, sessions = load_data()
+# ==========================================
+# LOAD REAL DATA FROM SQLITE
+# ==========================================
+
+def load_data():
+
+    with sqlite3.connect(DB_FILE, timeout=10) as conn:
+
+        distractions = pd.read_sql_query(
+            "SELECT * FROM distractions",
+            conn
+        )
+
+        sessions = pd.read_sql_query(
+            "SELECT * FROM study_sessions",
+            conn
+        )
+
+    return prepare_data(distractions, sessions)
 
 
-# Dashboard header
+# ==========================================
+# GENERATE SYNTHETIC DEMO DATA
+# ==========================================
+
+def generate_demo_data():
+
+    rng = random.Random(42)
+
+    demo_distractions = []
+    demo_sessions = []
+
+    today = datetime.now().date()
+
+    session_id = 1
+    distraction_id = 1
+
+    # Generate 30 complete days of sample data
+    for days_ago in range(30, 0, -1):
+
+        day = today - timedelta(days=days_ago)
+
+        number_of_sessions = rng.randint(1, 5)
+
+        daily_sessions = []
+
+        for i in range(number_of_sessions):
+
+            start = datetime.combine(
+                day,
+                datetime.min.time()
+            ) + timedelta(
+                hours=9 + i * 3,
+                minutes=rng.randint(0, 30)
+            )
+
+            completed = rng.random() < 0.85
+
+            if completed:
+
+                duration = rng.choice(
+                    [25, 30, 45, 50, 60]
+                )
+
+            else:
+
+                duration = rng.randint(5, 24)
+
+            end = start + timedelta(minutes=duration)
+
+            blocks = rng.choices(
+                [0, 1, 2, 3],
+                weights=[50, 30, 15, 5]
+            )[0]
+
+            demo_sessions.append({
+                "id": session_id,
+                "start_time": start,
+                "end_time": end,
+                "duration_minutes": duration,
+                "completed": int(completed),
+                "distractions": blocks
+            })
+
+            daily_sessions.append((start, end))
+
+            session_id += 1
+
+            # Generate blocking events during focus
+            for j in range(blocks):
+
+                timestamp = start + timedelta(
+                    minutes=rng.randint(0, duration - 1)
+                )
+
+                demo_distractions.append({
+                    "id": distraction_id,
+                    "website": "Instagram",
+                    "timestamp": timestamp
+                })
+
+                distraction_id += 1
+
+        # Generate additional blocks outside focus sessions
+
+        for j in range(rng.randint(0, 3)):
+
+            while True:
+
+                timestamp = datetime.combine(
+                    day,
+                    datetime.min.time()
+                ) + timedelta(
+                    hours=rng.randint(10, 22),
+                    minutes=rng.randint(0, 59)
+                )
+
+                inside_session = any(
+                    start <= timestamp < end
+                    for start, end in daily_sessions
+                )
+
+                if not inside_session:
+                    break
+
+            demo_distractions.append({
+                "id": distraction_id,
+                "website": "Instagram",
+                "timestamp": timestamp
+            })
+
+            distraction_id += 1
+
+    distractions = pd.DataFrame(demo_distractions)
+    sessions = pd.DataFrame(demo_sessions)
+
+    return prepare_data(distractions, sessions)
+
+
+# ==========================================
+# DASHBOARD HEADER
+# ==========================================
+
 left, right = st.columns([5, 1])
 
 with left:
@@ -159,10 +305,50 @@ with right:
         )
 
 
-# Sidebar
+# ==========================================
+# SIDEBAR SETTINGS
+# ==========================================
+
 st.sidebar.title("🌿 Dashboard Settings")
 
+demo_mode = st.sidebar.toggle(
+    "Demo Mode",
+    value=False,
+    help=(
+        "Display synthetic sample data instead "
+        "of your personal study records."
+    )
+)
+
+if demo_mode:
+
+    distractions, sessions = generate_demo_data()
+
+    st.sidebar.success("Demo Mode Active")
+
+    st.sidebar.caption(
+        "Viewing 30 days of synthetic sample data."
+    )
+
+    st.info(
+        "🌱 DEMO MODE — All statistics and charts "
+        "display synthetic sample data. "
+        "Your personal study records are unchanged."
+    )
+
+else:
+
+    distractions, sessions = load_data()
+
 today = datetime.now().date()
+
+if demo_mode:
+    today -= timedelta(days=1)
+
+
+# ==========================================
+# DATE RANGE FILTER
+# ==========================================
 
 all_dates = (
     distractions["date"].tolist()
@@ -180,7 +366,8 @@ period = st.sidebar.selectbox(
         "All Time",
         "Custom Range"
     ],
-    index=1
+    index=2 if demo_mode else 1,
+    key="demo_period" if demo_mode else "real_period"
 )
 
 if period == "Today":
@@ -207,7 +394,8 @@ else:
 
     selected_dates = st.sidebar.date_input(
         "Choose date range",
-        value=(today - timedelta(days=6), today)
+        value=(today - timedelta(days=6), today),
+        key="demo_dates" if demo_mode else "real_dates"
     )
 
     if len(selected_dates) != 2:
@@ -218,26 +406,37 @@ else:
     start_date, end_date = selected_dates
 
 
-# Automatic refresh
+# ==========================================
+# AUTOMATIC REFRESH
+# ==========================================
+
 auto_refresh = st.sidebar.checkbox(
     "Auto-refresh every 10 seconds",
-    value=False
+    value=False,
+    disabled=demo_mode
 )
 
 if st.sidebar.button("🔄 Refresh Data"):
 
     st.rerun()
 
+if demo_mode:
 
-# Filter distraction records
+    st.sidebar.caption(
+        "Auto-refresh is disabled in Demo Mode."
+    )
+
+
+# ==========================================
+# FILTER DATA
+# ==========================================
+
 filtered_distractions = distractions[
     (distractions["date"] >= start_date)
     &
     (distractions["date"] <= end_date)
 ].copy()
 
-
-# Filter study sessions
 filtered_sessions = sessions[
     (sessions["date"] >= start_date)
     &
@@ -245,7 +444,10 @@ filtered_sessions = sessions[
 ].copy()
 
 
-# Calculate statistics
+# ==========================================
+# CALCULATE STATISTICS
+# ==========================================
+
 total_minutes = filtered_sessions[
     "duration_minutes"
 ].sum()
@@ -279,13 +481,19 @@ session_distractions = int(
 )
 
 
-# Display selected time period
+# ==========================================
+# DISPLAY SELECTED TIME PERIOD
+# ==========================================
+
 st.caption(
     f"Showing records from {start_date} to {end_date}"
 )
 
 
-# Main statistics
+# ==========================================
+# MAIN STATISTICS
+# ==========================================
+
 st.subheader("Your Focus Overview")
 
 c1, c2, c3, c4 = st.columns(4)
@@ -312,7 +520,10 @@ c4.metric(
 )
 
 
-# Additional statistics
+# ==========================================
+# ADDITIONAL STATISTICS
+# ==========================================
+
 c5, c6, c7 = st.columns(3)
 
 c5.metric(
@@ -331,13 +542,27 @@ c7.metric(
 )
 
 
-# Plotly styling
+# ==========================================
+# PLOTLY CHART STYLING
+# ==========================================
+
 def style_chart(fig):
 
     fig.update_layout(
+
         paper_bgcolor="rgba(0,0,0,0)",
+
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=DARK_GREEN),
+
+        font=dict(
+            color=DARK_GREEN,
+            size=12
+        ),
+
+        legend=dict(
+            font=dict(color=DARK_GREEN)
+        ),
+
         margin=dict(
             l=20,
             r=20,
@@ -347,28 +572,37 @@ def style_chart(fig):
     )
 
     fig.update_xaxes(
-        gridcolor="#DDE8D5"
+        gridcolor="#DDE8D5",
+        tickfont=dict(color=DARK_GREEN),
+        title_font=dict(color=DARK_GREEN)
     )
 
     fig.update_yaxes(
-        gridcolor="#DDE8D5"
+        gridcolor="#DDE8D5",
+        tickfont=dict(color=DARK_GREEN),
+        title_font=dict(color=DARK_GREEN)
     )
 
     return fig
 
 
-# Create date range for daily charts
+# ==========================================
+# CREATE DAILY DATE RANGE
+# ==========================================
+
 dates = pd.date_range(
     start=start_date,
     end=end_date
 ).date
 
-
 st.divider()
 
-# Daily charts
-col1, col2 = st.columns(2)
 
+# ==========================================
+# DAILY FOCUS TIME
+# ==========================================
+
+col1, col2 = st.columns(2)
 
 with col1:
 
@@ -403,6 +637,10 @@ with col1:
         use_container_width=True
     )
 
+
+# ==========================================
+# DISTRACTION TRENDS
+# ==========================================
 
 with col2:
 
@@ -440,9 +678,11 @@ with col2:
     )
 
 
-# Session completion and hourly patterns
-col3, col4 = st.columns(2)
+# ==========================================
+# SESSION COMPLETION
+# ==========================================
 
+col3, col4 = st.columns(2)
 
 with col3:
 
@@ -483,6 +723,10 @@ with col3:
         )
 
 
+# ==========================================
+# DISTRACTIONS BY HOUR
+# ==========================================
+
 with col4:
 
     st.subheader("🕒 Distractions by Hour")
@@ -522,7 +766,10 @@ with col4:
     )
 
 
-# Weekly distraction heatmap
+# ==========================================
+# WEEKLY DISTRACTION HEATMAP
+# ==========================================
+
 st.subheader("🗓️ Weekly Distraction Heatmap")
 
 weekdays = [
@@ -569,7 +816,176 @@ st.plotly_chart(
 )
 
 
-# Automatic insights
+# ==========================================
+# SEVEN-DAY MOVING AVERAGE
+# ==========================================
+
+st.divider()
+
+st.subheader("📈 Focus Time Moving Average")
+
+rolling_focus = daily_focus.copy()
+
+rolling_focus["7_day_average"] = (
+    rolling_focus["duration_minutes"]
+    .rolling(window=7, min_periods=7)
+    .mean()
+)
+
+if len(rolling_focus) >= 7:
+
+    fig = px.line(
+        rolling_focus,
+        x="date",
+        y=[
+            "duration_minutes",
+            "7_day_average"
+        ],
+        labels={
+            "date": "Date",
+            "value": "Focus Minutes",
+            "variable": "Metric"
+        },
+        color_discrete_sequence=[
+            LIGHT_GREEN,
+            DARK_GREEN
+        ]
+    )
+
+    fig.for_each_trace(
+        lambda trace: trace.update(
+            name={
+                "duration_minutes": "Daily Focus",
+                "7_day_average": "7-Day Average"
+            }.get(trace.name, trace.name)
+        )
+    )
+
+    fig.update_traces(line_width=3)
+
+    st.plotly_chart(
+        style_chart(fig),
+        use_container_width=True
+    )
+
+    st.caption(
+        "The moving average smooths daily fluctuations "
+        "and helps reveal longer-term focus time trends."
+    )
+
+else:
+
+    st.info(
+        "Select at least seven days to display "
+        "the seven-day moving average."
+    )
+
+
+# ==========================================
+# FOCUS TIME BY HOUR
+# ==========================================
+
+st.subheader("⏰ Focus Time by Starting Hour")
+
+hourly_focus = (
+    filtered_sessions
+    .groupby("hour")["duration_minutes"]
+    .sum()
+    .reindex(range(24), fill_value=0)
+    .rename_axis("hour")
+    .reset_index()
+)
+
+hourly_focus["time"] = (
+    hourly_focus["hour"].apply(
+        lambda h: datetime.strptime(
+            str(h), "%H"
+        ).strftime("%I %p").lstrip("0")
+    )
+)
+
+fig = px.bar(
+    hourly_focus,
+    x="time",
+    y="duration_minutes",
+    labels={
+        "time": "Session Starting Hour",
+        "duration_minutes": "Focus Minutes"
+    },
+    color_discrete_sequence=[GREEN]
+)
+
+st.plotly_chart(
+    style_chart(fig),
+    use_container_width=True
+)
+
+st.caption(
+    "Session duration is attributed to the hour "
+    "in which the timer started."
+)
+
+
+# ==========================================
+# DISTRACTIONS VS SESSION COMPLETION
+# ==========================================
+
+st.subheader("🔍 Distractions and Session Completion")
+
+if total_sessions > 0:
+
+    completion_analysis = (
+        filtered_sessions
+        .groupby("status")
+        .agg(
+            average_distractions=("distractions", "mean"),
+            session_count=("id", "count")
+        )
+        .reset_index()
+    )
+
+    fig = px.bar(
+        completion_analysis,
+        x="status",
+        y="average_distractions",
+        color="status",
+        text_auto=".2f",
+        hover_data=["session_count"],
+        labels={
+            "status": "Session Status",
+            "average_distractions": "Average Blocks",
+            "session_count": "Number of Sessions"
+        },
+        color_discrete_map={
+            "Completed": GREEN,
+            "Unfinished": LIGHT_GREEN
+        }
+    )
+
+    fig.update_layout(
+        showlegend=False
+    )
+
+    st.plotly_chart(
+        style_chart(fig),
+        use_container_width=True
+    )
+
+    st.caption(
+        "This comparison explores the relationship "
+        "between recorded distractions and session "
+        "completion. It does not establish causation."
+    )
+
+else:
+
+    st.info("No study sessions available for comparison.")
+
+
+# ==========================================
+# AUTOMATIC INSIGHTS
+# ==========================================
+
 st.divider()
 
 st.subheader("💡 Your Focus Insights")
@@ -602,7 +1018,7 @@ else:
         )
 
         st.info(
-            f"Your highest recorded number of Instagram "
+            f"The highest recorded number of Instagram "
             f"blocks occurs around {peak_time}."
         )
 
@@ -614,24 +1030,51 @@ else:
     if total_sessions > 0:
 
         st.info(
-            f"Your average focus session lasts "
+            f"The average focus session lasts "
             f"{average_session:.1f} minutes."
         )
 
         st.info(
-            f"You completed {completed_sessions} out of "
-            f"{total_sessions} recorded focus sessions."
+            f"{completed_sessions} out of "
+            f"{total_sessions} recorded focus "
+            f"sessions were completed."
         )
 
+        focus_by_hour = (
+            filtered_sessions
+            .groupby("hour")["duration_minutes"]
+            .sum()
+        )
 
-# Study history
+        if focus_by_hour.sum() > 0:
+
+            best_hour = int(
+                focus_by_hour.idxmax()
+            )
+
+            best_time = datetime.strptime(
+                str(best_hour), "%H"
+            ).strftime("%I %p").lstrip("0")
+
+            st.success(
+                f"Sessions starting around {best_time} "
+                f"account for the most recorded focus time."
+            )
+
+
+# ==========================================
+# STUDY HISTORY
+# ==========================================
+
 st.divider()
 
 st.subheader("📖 Your Study History")
 
 if filtered_sessions.empty:
 
-    st.info("No study sessions found for this date range.")
+    st.info(
+        "No study sessions found for this date range."
+    )
 
 else:
 
@@ -663,8 +1106,17 @@ else:
     )
 
 
-# Download reports
+# ==========================================
+# DOWNLOAD CSV REPORTS
+# ==========================================
+
 st.subheader("📥 Download Your Data")
+
+if demo_mode:
+
+    st.caption(
+        "These downloads contain synthetic sample data."
+    )
 
 download1, download2 = st.columns(2)
 
@@ -673,7 +1125,11 @@ with download1:
     st.download_button(
         label="Download Study Sessions",
         data=filtered_sessions.to_csv(index=False),
-        file_name="smiski_study_sessions.csv",
+        file_name=(
+            "demo_study_sessions.csv"
+            if demo_mode
+            else "smiski_study_sessions.csv"
+        ),
         mime="text/csv"
     )
 
@@ -682,12 +1138,19 @@ with download2:
     st.download_button(
         label="Download Distraction History",
         data=filtered_distractions.to_csv(index=False),
-        file_name="smiski_distractions.csv",
+        file_name=(
+            "demo_distractions.csv"
+            if demo_mode
+            else "smiski_distractions.csv"
+        ),
         mime="text/csv"
     )
 
 
-# Footer
+# ==========================================
+# FOOTER
+# ==========================================
+
 st.divider()
 
 st.caption(
@@ -695,6 +1158,13 @@ st.caption(
     "Instagram blocks represent recorded blocking events, "
     "not every possible distraction."
 )
+
+if demo_mode:
+
+    st.caption(
+        "Demo Mode uses reproducible synthetic data "
+        "generated with a fixed random seed."
+    )
 
 st.markdown(
     "<p style='text-align:center;color:#47663D;'>"
@@ -704,10 +1174,11 @@ st.markdown(
 )
 
 
-# Optional automatic refresh
-if auto_refresh:
+# ==========================================
+# OPTIONAL AUTOMATIC REFRESH
+# ==========================================
 
-    import time
+if auto_refresh and not demo_mode:
 
     time.sleep(10)
 
