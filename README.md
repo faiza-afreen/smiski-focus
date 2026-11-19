@@ -72,6 +72,23 @@ dashboard.
 
 ## 🚀 Installation
 
+### Install the Chrome Extension
+
+1. Open Google Chrome.
+2. Navigate to chrome://extensions/.
+3. Enable Developer Mode.
+4. Click Load unpacked.
+5. Select the chrome-extension folder.
+6. Enable focus mode through the extension popup.
+
+The extension requires user-provided image assets named
+work.png, sleep.png, push.png, and peek.png inside the
+chrome-extension folder.
+
+Start the desktop application to enable distraction
+logging and real-time analytics.
+
+
 ### Prerequisites
 
 - Python 3.11
